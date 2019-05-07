@@ -1,0 +1,349 @@
+clc
+clear all
+rng('shuffle');
+rep=100;
+n=50;
+%teta=[0.9 1 0.8];
+teta=[30 2 1];
+b2=1.345;
+b2=4.685;
+epsi=10^(-3);
+c=2; 
+normdelamat=1;
+normdelavec=1;
+
+for p=1:1;
+s0=teta(p,:)';
+%done = false; 
+a1=s0(1);c1=s0(2);k1=s0(3);
+saySS=0;
+
+sumob=zeros(3,1);obbias=zeros(3,1);obmse=zeros(3,1);
+sumls=zeros(3,1);lsbias=zeros(3,1);lsmse=zeros(3,1);
+sumtky=zeros(3,1);tkybias=zeros(3,1);tkymse=zeros(3,1);
+summl=zeros(3,1);mlbias=zeros(3,1);mlmse=zeros(3,1);
+for j=1:rep 
+    iter2=0;
+    iter1=0;
+    ob=s0;
+%random number
+syms x
+f(x) = (1-(1+x^c1)^(-k1))/(1-(1-a1)*((1+x^c1)^(-k1)));
+g = finverse(f);
+u=rand(n,1);
+g(u);
+x1=g(u);
+x=double(x1);
+% %Outlier
+  maxi=max(x);
+  asd=sort(x)
+ for jk=1:n-1
+      z(jk)=asd(jk);
+ end
+    
+ maxi2=max(z);
+   	x(n)=5*maxi;
+  	x(n-1)=5*maxi;
+     x(n-2)=5*maxi2;
+     x(n-3)=5*maxi2;
+%    % x(n-4)=6*maxi2-0.1;
+
+% ------------------------------------------------------------------------------
+
+% ------------------------------------------------------------------------------
+%% OBRE Algorithm
+%% Step 1 : Define initial values
+tol=0.0001;
+avec=[0;0;0];
+J1=fisherMOEB(x,ob);
+[V,D]=eig(J1);
+J2=(V*D^(1/2)*V');
+amat=(inv(J2))';
+
+tol=0.01;
+avec=[0;0;0];
+J1=fisherMOEB(x,ob);
+[V,D]=eig(J1);
+J2=(V*D^(1/2)*V');
+amat=(inv(J2))';
+
+if iter2==0
+    normdel=1;
+    delta=[1;1;1];
+end
+while(delta(1)>epsi && delta(2)>epsi && delta(3)>epsi)  
+iter2=iter2+1;
+if iter1==0
+    normdelamat=1;
+    normdelavec=1;
+end
+    while (normdelamat>epsi) && (normdelavec>epsi)
+        
+        iter1=iter1+1
+        oldav = avec;
+        oldam = amat;
+
+%%%%%%%%%%%%OBRE algorithm 
+
+%% Step 2 : Calculate M2 matrix
+
+                M2=zeros(3,3);              
+                M2(1,1) = m211(2,x, ob,c, avec, amat);
+                M2(1,2) = m212(2,x, ob,c, avec, amat);
+                M2(1,3) = m213(2,x, ob,c, avec, amat);
+                M2(2,2) = m222(2,x, ob,c, avec, amat);
+                M2(2,3) = m223(2,x, ob,c, avec, amat);
+                M2(3,3) = m233(2,x, ob,c, avec, amat);
+                M2(2,1)=M2(1,2);M2(3,1)=M2(1,3);M2(3,2)=M2(2,3);
+
+%% Step 2: Compute new A matrix and a vector
+                amat=(chol(pinv(M2)))';  %%% A matrix
+                avec=(afunc(x, ob,c, oldav, oldam))';   %%% a vector  
+                
+            %done = compare(avec,oldav,amat,oldam)
+            delamat=amat-oldam;
+            delavec=avec-oldav;
+
+            normdelamat=norm(delamat,'fro');
+            normdelavec=norm(delavec,'fro');
+               
+    end %% içerideki while
+
+%% Step 3 : Calculate M1
+M1= zeros(3,3);             
+                M1(1,1) = m211(1,x, ob,c, avec, amat);
+                M1(1,2) = m212(1,x, ob,c, avec, amat);
+                M1(1,3) = m213(1,x, ob,c, avec, amat);
+                M1(2,2) = m222(1,x, ob,c, avec, amat);
+                M1(2,3) = m223(1,x, ob,c, avec, amat);
+                M1(3,3) = m233(1,x, ob,c, avec, amat);
+            M1(2,1)=M1(1,2);M1(3,1)=M1(1,3);M1(3,2)=M1(2,3);
+            M1inv=inv(M1);
+        %%  Delta theta
+    deltapar = zeros(3,1);
+    s1 = zeros(1,n); s2 = s1; weights = s1;
+    sco1=score1(x,ob);
+    sco2=score2(x,ob);
+    sco3=score3(x,ob);
+    weights=weight(x,ob,c,avec, amat);
+    deltapar(1)=mean((sco1-avec(1)).*weights);
+    deltapar(2)=mean((sco2-avec(2)).*weights);
+    deltapar(3)=mean((sco3-avec(3)).*weights);
+
+    delta=M1inv*deltapar;
+    normdel=norm(delta,'fro')
+    if normdel>epsi
+    ob=ob+delta;
+    end
+end
+
+
+sumob=sumob+ob;
+obbias=obbias+abs(ob-s0);
+obmse=obmse+(ob-s0).^2;
+
+%%%%%%%%%%%%%%%%%%%%%%
+'ML tahmini';
+fark=[1,1,1];
+aml=a1;cml=c1;kml=k1;
+oldaml=a1;oldcml=c1;oldkml=k1;
+itera=0;iterc=0;iterk=0;
+'ML tahmini';
+slow1=s0-[2 2 1]';
+sub1=s0+[2 2 1]';
+options1=optimset('display','off','MaxFunEvals',5000,'MaxIter',5000,'tolx',0.01);   % Option to display output;
+LnL=@(sm) (-1)*(n*log(sm(1))+n*log(sm(2))+n*log(sm(3))+(sm(2)-1)*sum(log(x))-(sm(3)+1)*sum(log(1+x.^sm(2)))-2*sum(log(1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3))))));
+%LQml=0.99999999;
+%LnL=@(sm)(-1)*sum((((((sm(1)*sm(2)*sm(3)*((1+x.^sm(2)).^(-sm(3)-1)).*(x.^(sm(2)-1)))./((1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3)))).^2))).^(1-LQml))-1)/(1-LQml));
+[s1,LnLval,kokvar1] = fminsearchs(LnL,s0,slow1,sub1,options1);
+if kokvar1==1; 
+    ml=s1;
+end
+
+
+
+summl=summl+ml;
+mlbias=mlbias+abs(ml-s0);
+mlmse=mlmse+(ml-s0).^2;
+
+% %%%%%%%%%%%%%%%%%%%%%%
+
+y=(1:n);
+y=(y-0.5)./n;
+y=(log((1-y).^(-1)));
+y=y';
+x=sort(x);
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%
+% 'EKK tahmini';
+slow1=s0-[2 2 1]';
+sub1=s0+[2 2 1]';
+Q=@(sm) (sum((y-(-log(sm(1))+sm(3)*log(1+x.^sm(2))+log(1-(1-sm(1))*(1+x.^sm(2)).^(-sm(3))))).^2));
+options1=optimset('display','off','MaxFunEvals',5000,'MaxIter',5000);   % Option to display output;
+[s3,Qval,kokvar3ls] = fminsearchs(Q,s0,slow1,sub1,options1);
+if kokvar3ls==1; 
+    paramls=s3;
+end
+
+sumls=sumls+paramls;
+lsbias=lsbias+abs(paramls-s0);
+lsmse=lsmse+(paramls-s0).^2;
+% 
+%%%%%%%%%%%%%%%%%%%%%%
+% 'Robust Tahmini Tukey' ;
+slow2=s0-0.5;
+sub2=s0+0.5;
+M=@(sm) (0);
+
+for q=1:n
+if abs(y(q)-(-log(a1)+k1*log(1+x(q)^c1)+log(1-(1-a1)*(1+x(q)^c1)^(-k1))))<=b2
+    M1=@(sm) (1-(1-((y(q)-(-log(sm(1))+sm(3)*log(1+x(q)^sm(2))+log(1-(1-sm(1))*(1+x(q)^sm(2))^(-sm(3)))))^2))^3);
+    M=@(sm) M(sm)+M1(sm);
+else
+    M1=@(sm) (1);
+    M=@(sm) M(sm)+M1(sm);
+end 
+end
+    [s4,Hval,kokvar3] =fminsearchs(M,s0,slow2,sub2,options1);
+    if kokvar3==1; 
+         tky=s4;
+    end
+sumtky=sumtky+tky;
+tkybias=tkybias+abs(tky-s0);
+tkymse=tkymse+(tky-s0).^2;
+
+
+end %% end of rep
+
+obson=sumob./rep;
+obbiasson=obbias./rep;
+obmseson=obmse./rep;
+
+mlson=summl./rep;
+mlbiasson=mlbias./rep;
+mlmseson=mlmse./rep;
+% 
+lsson=sumls./rep;
+lsbiasson=lsbias./rep;
+lsmseson=lsmse./rep;
+
+tkyson=sumtky./rep;
+tkybiasson=tkybias./rep;
+tkymseson=tkymse./rep;
+
+
+OBRE(:,:,p)=[mlson,mlbiasson,mlmseson,lsson,lsbiasson,lsmseson,tkyson,tkybiasson,tkymseson,obson,obbiasson,obmseson]; %lsson,lsbiasson,lsmseson,tkyson,tkybiasson,tkymseson, 
+end %% 
+SONUC=[OBRE(:,:,1)];
+OBRest=SONUC(:,10:12)
+
+function aresult = afunc(x, sm,c, avec, amat)
+    aresult(1)= (((score1(x,sm))')*weight(x,sm,c,avec, amat))/sum(weight(x,sm,c,avec, amat));
+    aresult(2)= (((score2(x,sm))')*weight(x,sm,c,avec, amat))/sum(weight(x,sm,c,avec, amat));
+    aresult(3)= (((score3(x,sm))')*weight(x,sm,c,avec, amat))/sum(weight(x,sm,c,avec, amat));
+return;
+aresult=aresult';
+
+function J = fisherMOEB(x,sm)
+N=size(x);
+n=N(1);
+J = zeros(3,3);
+sco1=score1(x,sm);sco2=score2(x,sm);sco3=score3(x,sm);
+
+    J(1,1)=sco1'*sco1/n;
+    J(1,2)=sco1'*sco2/n;
+    J(1,3)=sco1'*sco3/n;
+    J(2,2)=sco2'*sco2/n;
+    J(2,3)=sco2'*sco3/n;
+    J(3,3)=sco3'*sco3/n;
+J(2,1)=J(1,2);J(3,1)=J(1,3);J(3,2)=J(2,3);
+return;
+end 
+
+function m211result = m211(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco1 = score1(x,sm);
+if k==1
+m211result = mean((((sco1-avec(1)).*(sco1-avec(1))).*weight(x, sm, c, avec, amat)));    
+else
+m211result = mean((((sco1-avec(1)).*(sco1-avec(1))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end 
+end
+function m212result = m212(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco1 = score1(x,sm);
+sco2 = score2(x,sm);
+if k==1
+    m212result = mean((((sco1-avec(1)).*(sco2-avec(2))).*(weight(x, sm, c, avec, amat))));
+else
+m212result = mean((((sco1-avec(1)).*(sco2-avec(2))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end
+end
+
+function m213result = m213(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco1 = score1(x,sm);
+sco3 = score3(x,sm);
+if k==1
+m213result =mean ((((sco1-avec(1)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat))));
+else
+m213result = mean((((sco1-avec(1)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end
+end
+
+function m222result = m222(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco2 = score2(x,sm);
+if k==1
+    m222result = mean((((sco2-avec(2)).*(sco2-avec(2))).*(weight(x, sm, c, avec, amat))));
+
+else
+m222result = mean((((sco2-avec(2)).*(sco2-avec(2))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end 
+end 
+
+function m223result = m223(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco2 = score2(x,sm);
+sco3 = score3(x,sm);
+if k==1
+    m223result = mean((((sco2-avec(2)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat))));
+else
+m223result = mean((((sco2-avec(2)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end
+end
+
+function m233result = m233(k,x, sm, c, avec, amat)
+N=size(x);n=N(1);
+sco3 = score3(x,sm);
+if k==1
+m233result = mean((((sco3-avec(3)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat))));
+else 
+m233result = mean((((sco3-avec(3)).*(sco3-avec(3))).*(weight(x, sm, c, avec, amat).*weight(x, sm, c, avec, amat))));
+end
+end
+
+function s1=score1(x,sm)
+s1=(1/sm(1))-(2*(((1+x.^sm(2)).^(-sm(3)))./(1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3))))));
+
+function s1=score1(x,sm)
+s1=(1/sm(1))-(2*(((1+x.^sm(2)).^(-sm(3)))./(1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3))))));
+function s2=score2(x,sm)
+s2=(1/sm(2))+(log(x))-(sm(3)+1)*((x.^sm(2)).*log(x)./(1+x.^sm(2)))-2*sm(3)*(1-sm(1))*(((x.^sm(2)).*((1+x.^sm(2)).^(-sm(3)-1)).*log(x))./(1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3)))));
+
+function s3=score3(x,sm)
+s3=(1/sm(3))-(log(1+x.^sm(2)))-2*(1-sm(1))*((((1+x.^sm(2)).^(-sm(3))).*log(1+x.^sm(2))./(1-(1-sm(1))*((1+x.^sm(2)).^(-sm(3))))));
+
+function w=weight(x,sm,c,a,amat)
+N=size(x);
+n=N(1);
+sco1 = score1(x,sm);
+sco2 = score2(x,sm);
+sco3 = score3(x,sm);
+scor=[sco1,sco2,sco3]';
+for i=1:n
+    Asa=(amat*(scor(:,i)-a));
+    norm(i)=sqrt(sum(Asa.^2));    
+end
+w1=(c./norm)';
+w=min(1,w1);
